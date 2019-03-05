@@ -10,6 +10,7 @@ import { MenuItemLabel, MenuItemLi, MenuItemTitle, OperationBadge } from './styl
 export interface MenuItemProps {
   item: IMenuItem;
   onActivate?: (item: IMenuItem) => void;
+  onDeactivate?: (item: IMenuItem) => void;
   withoutChildren?: boolean;
 }
 
@@ -17,8 +18,13 @@ export interface MenuItemProps {
 export class MenuItem extends React.Component<MenuItemProps> {
   ref: Element | null;
 
-  activate = (evt: React.MouseEvent<HTMLElement>) => {
-    this.props.onActivate!(this.props.item);
+  onClick = (evt: React.MouseEvent<HTMLElement>) => {
+    const item = this.props.item;
+    if (item.expanded) {
+      this.props.onDeactivate!(item);
+    } else {
+      this.props.onActivate!(item);
+    }
     evt.stopPropagation();
   };
 
@@ -44,7 +50,7 @@ export class MenuItem extends React.Component<MenuItemProps> {
     const { item, withoutChildren } = this.props;
     return (
       <MenuItemLi
-        onClick={this.activate}
+        onClick={this.onClick}
         depth={item.depth}
         ref={this.saveRef}
         data-item-id={item.id}
@@ -71,6 +77,7 @@ export class MenuItem extends React.Component<MenuItemProps> {
               expanded={item.expanded}
               items={item.items}
               onActivate={this.props.onActivate}
+              onDeactivate={this.props.onDeactivate}
             />
           )}
       </MenuItemLi>
