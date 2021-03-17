@@ -23,6 +23,7 @@ export interface FieldProps extends SchemaOptions {
   showExamples?: boolean;
 
   field: FieldModel;
+  expandByDefault?: boolean;
 
   renderDiscriminatorSwitch?: (opts: FieldProps) => JSX.Element;
 }
@@ -30,29 +31,48 @@ export interface FieldProps extends SchemaOptions {
 @observer
 export class Field extends React.Component<FieldProps> {
   toggle = () => {
-    this.props.field.toggle();
+    if (this.props.field.expanded === undefined && this.props.expandByDefault) {
+      this.props.field.expanded = false;
+    } else {
+      this.props.field.toggle();
+    }
   };
+
+  handleKeyPress = e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      this.toggle();
+    }
+  };
+
   render() {
-    const { className, field, isLast } = this.props;
-    const { name, expanded, deprecated, required, kind } = field;
+    const { className, field, isLast, expandByDefault } = this.props;
+    const { name, deprecated, required, kind } = field;
     const withSubSchema = !field.schema.isPrimitive && !field.schema.isCircular;
+
+    const expanded = field.expanded === undefined ? expandByDefault : field.expanded;
 
     const paramName = withSubSchema ? (
       <ClickablePropertyNameCell
-        onClick={this.toggle}
         className={deprecated ? 'deprecated' : ''}
         kind={kind}
         title={name}
       >
         <PropertyBullet />
-        {name}
-        <ShelfIcon direction={expanded ? 'down' : 'right'} />
+        <button
+          onClick={this.toggle}
+          onKeyPress={this.handleKeyPress}
+          aria-label="expand properties"
+        >
+          <span>{name}</span>
+          <ShelfIcon direction={expanded ? 'down' : 'right'} />
+        </button>
         {required && <RequiredLabel> required </RequiredLabel>}
       </ClickablePropertyNameCell>
     ) : (
       <PropertyNameCell className={deprecated ? 'deprecated' : undefined} kind={kind} title={name}>
         <PropertyBullet />
-        {name}
+        <span>{name}</span>
         {required && <RequiredLabel> required </RequiredLabel>}
       </PropertyNameCell>
     );
@@ -65,21 +85,20 @@ export class Field extends React.Component<FieldProps> {
             <FieldDetails {...this.props} />
           </PropertyDetailsCell>
         </tr>
-        {field.expanded &&
-          withSubSchema && (
-            <tr key={field.name + 'inner'}>
-              <PropertyCellWithInner colSpan={2}>
-                <InnerPropertiesWrap>
-                  <Schema
-                    schema={field.schema}
-                    skipReadOnly={this.props.skipReadOnly}
-                    skipWriteOnly={this.props.skipWriteOnly}
-                    showTitle={this.props.showTitle}
-                  />
-                </InnerPropertiesWrap>
-              </PropertyCellWithInner>
-            </tr>
-          )}
+        {expanded && withSubSchema && (
+          <tr key={field.name + 'inner'}>
+            <PropertyCellWithInner colSpan={2}>
+              <InnerPropertiesWrap>
+                <Schema
+                  schema={field.schema}
+                  skipReadOnly={this.props.skipReadOnly}
+                  skipWriteOnly={this.props.skipWriteOnly}
+                  showTitle={this.props.showTitle}
+                />
+              </InnerPropertiesWrap>
+            </PropertyCellWithInner>
+          </tr>
+        )}
       </>
     );
   }

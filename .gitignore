@@ -34,4 +34,6 @@ cli/index.js
 /coverage
 .ghpages-tmp
 stats.json
-/package-lock.json
+yarn.lock
+.idea
+.vscode

@@ -1,4 +1,4 @@
-import { action, observable } from 'mobx';
+import { action, observable, makeObservable } from 'mobx';
 
 import { OpenAPIExternalDocumentation, OpenAPISchema, Referenced } from '../../types';
 
@@ -14,9 +14,12 @@ import {
   isNamedDefinition,
   isPrimitiveType,
   JsonPointer,
+  pluralizeType,
   sortByField,
   sortByRequired,
 } from '../../utils/';
+
+import { l } from '../Labels';
 
 // TODO: refactor this model, maybe use getters instead of copying all the values
 export class SchemaModel {
@@ -56,7 +59,7 @@ export class SchemaModel {
 
   rawSchema: OpenAPISchema;
   schema: MergedOpenAPISchema;
-  extensions?: Dict<any>;
+  extensions?: Record<string, any>;
 
   /**
    * @param isChild if schema discriminator Child
@@ -69,9 +72,12 @@ export class SchemaModel {
     private options: RedocNormalizedOptions,
     isChild: boolean = false,
   ) {
+    makeObservable(this);
+
     this.pointer = schemaOrRef.$ref || pointer || '';
     this.rawSchema = parser.deref(schemaOrRef);
     this.schema = parser.mergeAllOf(this.rawSchema, this.pointer, isChild);
+
     this.init(parser, isChild);
 
     parser.exitRef(schemaOrRef);
@@ -122,6 +128,13 @@ export class SchemaModel {
     if (!isChild && getDiscriminator(schema) !== undefined) {
       this.initDiscriminator(schema, parser);
       return;
+    } else if (
+      isChild &&
+      Array.isArray(schema.oneOf) &&
+      schema.oneOf.find((s) => s.$ref === this.pointer)
+    ) {
+      // we hit allOf of the schema with the parent discriminator
+      delete schema.oneOf;
     }
 
     if (schema.oneOf !== undefined) {
@@ -145,9 +158,9 @@ export class SchemaModel {
       this.fields = buildFields(parser, schema, this.pointer, this.options);
     } else if (this.type === 'array' && schema.items) {
       this.items = new SchemaModel(parser, schema.items, this.pointer + '/items', this.options);
-      this.displayType = this.items.displayType;
+      this.displayType = pluralizeType(this.items.displayType);
       this.displayFormat = this.items.format;
-      this.typePrefix = this.items.typePrefix + 'Array of ';
+      this.typePrefix = this.items.typePrefix + l('arrayOf');
       this.title = this.title || this.items.title;
       this.isPrimitive = this.items.isPrimitive;
       if (this.example === undefined && this.items.example !== undefined) {
@@ -157,11 +170,23 @@ export class SchemaModel {
         this.enum = this.items.enum;
       }
     }
+
+    if (this.enum.length && this.options.sortEnumValuesAlphabetically) {
+      this.enum.sort();
+    }
   }
 
   private initOneOf(oneOf: OpenAPISchema[], parser: OpenAPIParser) {
     this.oneOf = oneOf!.map((variant, idx) => {
-      const merged = parser.mergeAllOf(variant, this.pointer + '/oneOf/' + idx);
+      const derefVariant = parser.deref(variant);
+
+      const merged = parser.mergeAllOf(derefVariant, this.pointer + '/oneOf/' + idx);
+
+      // try to infer title
+      const title =
+        isNamedDefinition(variant.$ref) && !merged.title
+          ? JsonPointer.baseName(variant.$ref)
+          : merged.title;
 
       const schema = new SchemaModel(
         parser,
@@ -169,12 +194,14 @@ export class SchemaModel {
         {
           // variant may already have allOf so merge it to not get overwritten
           ...merged,
+          title,
           allOf: [{ ...this.schema, oneOf: undefined, anyOf: undefined }],
         } as OpenAPISchema,
         this.pointer + '/oneOf/' + idx,
         this.options,
       );
 
+      parser.exitRef(variant);
       // each oneOf should be independent so exiting all the parent refs
       // otherwise it will cause false-positive recursive detection
       parser.exitParents(merged);
@@ -182,17 +209,22 @@ export class SchemaModel {
       return schema;
     });
 
-    this.displayType = this.oneOf
-      .map(schema => {
-        let name =
-          schema.typePrefix +
-          (schema.title ? `${schema.title} (${schema.displayType})` : schema.displayType);
-        if (name.indexOf(' or ') > -1) {
-          name = `(${name})`;
-        }
-        return name;
-      })
-      .join(' or ');
+    if (this.options.simpleOneOfTypeLabel) {
+      const types = collectUniqueOneOfTypesDeep(this);
+      this.displayType = types.join(' or ');
+    } else {
+      this.displayType = this.oneOf
+        .map((schema) => {
+          let name =
+            schema.typePrefix +
+            (schema.title ? `${schema.title} (${schema.displayType})` : schema.displayType);
+          if (name.indexOf(' or ') > -1) {
+            name = `(${name})`;
+          }
+          return name;
+        })
+        .join(' or ');
+    }
   }
 
   private initDiscriminator(
@@ -203,27 +235,92 @@ export class SchemaModel {
   ) {
     const discriminator = getDiscriminator(schema)!;
     this.discriminatorProp = discriminator.propertyName;
-    const derived = parser.findDerived([...(schema.parentRefs || []), this.pointer]);
+    const implicitInversedMapping = parser.findDerived([
+      ...(schema.parentRefs || []),
+      this.pointer,
+    ]);
 
     if (schema.oneOf) {
       for (const variant of schema.oneOf) {
         if (variant.$ref === undefined) {
           continue;
         }
-        const name = JsonPointer.dirName(variant.$ref);
-        derived[variant.$ref] = name;
+        const name = JsonPointer.baseName(variant.$ref);
+        implicitInversedMapping[variant.$ref] = name;
       }
     }
 
     const mapping = discriminator.mapping || {};
-    for (const name in mapping) {
-      derived[mapping[name]] = name;
+
+    // Defines if the mapping is exhaustive. This avoids having references
+    // that overlap with the mapping entries
+    let isLimitedToMapping = discriminator['x-explicitMappingOnly'] || false;
+    // if there are no mappings, assume non-exhaustive
+    if (Object.keys(mapping).length === 0) {
+      isLimitedToMapping = false;
     }
 
-    const refs = Object.keys(derived);
-    this.oneOf = refs.map(ref => {
-      const innerSchema = new SchemaModel(parser, parser.byRef(ref)!, ref, this.options, true);
-      innerSchema.title = derived[ref];
+    const explicitInversedMapping = {};
+    for (const name in mapping) {
+      const $ref = mapping[name];
+
+      if (Array.isArray(explicitInversedMapping[$ref])) {
+        explicitInversedMapping[$ref].push(name);
+      } else {
+        // overrides implicit mapping here
+        explicitInversedMapping[$ref] = [name];
+      }
+    }
+
+    const inversedMapping = isLimitedToMapping
+      ? { ...explicitInversedMapping }
+      : { ...implicitInversedMapping, ...explicitInversedMapping };
+
+    let refs: Array<{ $ref; name }> = [];
+
+    for (const $ref of Object.keys(inversedMapping)) {
+      const names = inversedMapping[$ref];
+      if (Array.isArray(names)) {
+        for (const name of names) {
+          refs.push({ $ref, name });
+        }
+      } else {
+        refs.push({ $ref, name: names });
+      }
+    }
+
+    // Make the listing respects the mapping
+    // in case a mapping is defined, the user usually wants to have the order shown
+    // as it was defined in the yaml. This will sort the names given the provided
+    // mapping (if provided).
+    // The logic is:
+    // - If a name is among the mapping, promote it to first
+    // - Names among the mapping are sorted by their order in the mapping
+    // - Names outside the mapping are sorted alphabetically
+    const names = Object.keys(mapping);
+    if (names.length !== 0) {
+      refs = refs.sort((left, right) => {
+        const indexLeft = names.indexOf(left.name);
+        const indexRight = names.indexOf(right.name);
+
+        if (indexLeft < 0 && indexRight < 0) {
+          // out of mapping, order by name
+          return left.name.localeCompare(right.name);
+        } else if (indexLeft < 0) {
+          // the right is found, so mapping wins
+          return 1;
+        } else if (indexRight < 0) {
+          // left wins as it's in mapping
+          return -1;
+        } else {
+          return indexLeft - indexRight;
+        }
+      });
+    }
+
+    this.oneOf = refs.map(({ $ref, name }) => {
+      const innerSchema = new SchemaModel(parser, parser.byRef($ref)!, $ref, this.options, true);
+      innerSchema.title = name;
       return innerSchema;
     });
   }
@@ -238,7 +335,7 @@ function buildFields(
   const props = schema.properties || {};
   const additionalProps = schema.additionalProperties;
   const defaults = schema.default || {};
-  const fields = Object.keys(props || []).map(fieldName => {
+  let fields = Object.keys(props || []).map((fieldName) => {
     let field = props[fieldName];
 
     if (!field) {
@@ -267,11 +364,11 @@ function buildFields(
   });
 
   if (options.sortPropsAlphabetically) {
-    sortByField(fields, 'name');
+    fields = sortByField(fields, 'name');
   }
   if (options.requiredPropsFirst) {
     // if not sort alphabetically sort in the order from required keyword
-    sortByRequired(fields, !options.sortPropsAlphabetically ? schema.required : undefined);
+    fields = sortByRequired(fields, !options.sortPropsAlphabetically ? schema.required : undefined);
   }
 
   if (typeof additionalProps === 'object' || additionalProps === true) {
@@ -279,7 +376,10 @@ function buildFields(
       new FieldModel(
         parser,
         {
-          name: 'property name *',
+          name: (typeof additionalProps === 'object'
+            ? additionalProps['x-additionalPropertiesName'] || 'property name'
+            : 'property name'
+          ).concat('*'),
           required: false,
           schema: additionalProps === true ? {} : additionalProps,
           kind: 'additionalProperties',
@@ -295,4 +395,24 @@ function buildFields(
 
 function getDiscriminator(schema: OpenAPISchema): OpenAPISchema['discriminator'] {
   return schema.discriminator || schema['x-discriminator'];
+}
+
+function collectUniqueOneOfTypesDeep(schema: SchemaModel) {
+  const uniqueTypes = new Set();
+
+  function crawl(schema: SchemaModel) {
+    for (const oneOfType of schema.oneOf || []) {
+      if (oneOfType.oneOf) {
+        crawl(oneOfType);
+        continue;
+      }
+
+      if (oneOfType.type) {
+        uniqueTypes.add(oneOfType.type);
+      }
+    }
+  }
+
+  crawl(schema);
+  return Array.from(uniqueTypes.values());
 }

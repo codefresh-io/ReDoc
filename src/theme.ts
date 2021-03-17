@@ -8,11 +8,11 @@ const defaultTheme: ThemeInterface = {
   },
   breakpoints: {
     small: '50rem',
-    medium: '85rem',
+    medium: '75rem',
     large: '105rem',
   },
   colors: {
-    tonalOffset: 0.3,
+    tonalOffset: 0.2,
     primary: {
       main: '#32329f',
       light: ({ colors }) => lighten(colors.tonalOffset, colors.primary.main),
@@ -20,22 +20,26 @@ const defaultTheme: ThemeInterface = {
       contrastText: ({ colors }) => readableColor(colors.primary.main),
     },
     success: {
-      main: '#00aa13',
-      light: ({ colors }) => lighten(colors.tonalOffset, colors.success.main),
+      main: '#1d8127',
+      light: ({ colors }) => lighten(colors.tonalOffset * 2, colors.success.main),
       dark: ({ colors }) => darken(colors.tonalOffset, colors.success.main),
       contrastText: ({ colors }) => readableColor(colors.success.main),
     },
     warning: {
-      main: '#d4ad03',
+      main: '#ffa500',
       light: ({ colors }) => lighten(colors.tonalOffset, colors.warning.main),
       dark: ({ colors }) => darken(colors.tonalOffset, colors.warning.main),
       contrastText: '#ffffff',
     },
     error: {
-      main: '#e53935',
+      main: '#d41f1c',
       light: ({ colors }) => lighten(colors.tonalOffset, colors.error.main),
       dark: ({ colors }) => darken(colors.tonalOffset, colors.error.main),
       contrastText: ({ colors }) => readableColor(colors.error.main),
+    },
+    gray: {
+      50: '#FAFAFA',
+      100: '#F5F5F5',
     },
     text: {
       primary: '#333333',
@@ -48,31 +52,35 @@ const defaultTheme: ThemeInterface = {
     responses: {
       success: {
         color: ({ colors }) => colors.success.main,
-        backgroundColor: ({ colors }) => transparentize(0.9, colors.success.main),
+        backgroundColor: ({ colors }) => transparentize(0.93, colors.success.main),
+        tabTextColor: ({ colors }) => colors.responses.success.color,
       },
       error: {
         color: ({ colors }) => colors.error.main,
-        backgroundColor: ({ colors }) => transparentize(0.9, colors.error.main),
+        backgroundColor: ({ colors }) => transparentize(0.93, colors.error.main),
+        tabTextColor: ({ colors }) => colors.responses.error.color,
       },
       redirect: {
-        color: '#ffa500',
+        color: ({ colors }) => colors.warning.main,
         backgroundColor: ({ colors }) => transparentize(0.9, colors.responses.redirect.color),
+        tabTextColor: ({ colors }) => colors.responses.redirect.color,
       },
       info: {
         color: '#87ceeb',
         backgroundColor: ({ colors }) => transparentize(0.9, colors.responses.info.color),
+        tabTextColor: ({ colors }) => colors.responses.info.color,
       },
     },
     http: {
-      get: '#6bbd5b',
-      post: '#248fb2',
-      put: '#9b708b',
-      options: '#d3ca12',
-      patch: '#e09d43',
-      delete: '#e27a7a',
-      basic: '#999',
-      link: '#31bbb6',
-      head: '#c167e4',
+      get: '#2F8132',
+      post: '#186FAF',
+      put: '#95507c',
+      options: '#947014',
+      patch: '#bf581d',
+      delete: '#cc3333',
+      basic: '#707070',
+      link: '#07818F',
+      head: '#A23DAD',
     },
   },
   schema: {
@@ -105,6 +113,7 @@ const defaultTheme: ThemeInterface = {
     headings: {
       fontFamily: 'Montserrat, sans-serif',
       fontWeight: '400',
+      lineHeight: '1.6em',
     },
     code: {
       fontSize: '13px',
@@ -121,10 +130,14 @@ const defaultTheme: ThemeInterface = {
       hover: ({ typography }) => lighten(0.2, typography.links.color),
     },
   },
-  menu: {
+  sidebar: {
     width: '260px',
     backgroundColor: '#fafafa',
     textColor: '#333333',
+    activeTextColor: theme =>
+      theme.sidebar.textColor !== defaultTheme.sidebar!.textColor
+        ? theme.sidebar.textColor
+        : theme.colors.primary.main,
     groupItems: {
       textTransform: 'uppercase',
     },
@@ -133,19 +146,20 @@ const defaultTheme: ThemeInterface = {
     },
     arrow: {
       size: '1.5em',
-      color: theme => theme.menu.textColor,
+      color: theme => theme.sidebar.textColor,
     },
   },
   logo: {
-    maxHeight: ({ menu }) => menu.width,
-    maxWidth: ({ menu }) => menu.width,
+    maxHeight: ({ sidebar }) => sidebar.width,
+    maxWidth: ({ sidebar }) => sidebar.width,
+    gutter: '2px',
   },
   rightPanel: {
     backgroundColor: '#263238',
     width: '40%',
     textColor: '#ffffff',
   },
-  codeSample: {
+  codeBlock: {
     backgroundColor: ({ rightPanel }) => darken(0.1, rightPanel.backgroundColor),
   },
 };
@@ -166,7 +180,7 @@ export function resolveTheme(theme: ThemeInterface): ResolvedThemeInterface {
               counter++;
               if (counter > 1000) {
                 throw new Error(
-                  `Theme probably contains cirucal dependency at ${currentPath}: ${val.toString()}`,
+                  `Theme probably contains circular dependency at ${currentPath}: ${val.toString()}`,
                 );
               }
 
@@ -196,6 +210,7 @@ export interface ColorSetting {
 export interface HTTPResponseColos {
   color: string;
   backgroundColor: string;
+  tabTextColor: string;
 }
 
 export interface FontSettings {
@@ -223,6 +238,10 @@ export interface ResolvedThemeInterface {
     success: ColorSetting;
     warning: ColorSetting;
     error: ColorSetting;
+    gray: {
+      50: string;
+      100: string;
+    };
     border: {
       light: string;
       dark: string;
@@ -281,6 +300,7 @@ export interface ResolvedThemeInterface {
     headings: {
       fontFamily: string;
       fontWeight: string;
+      lineHeight: string;
     };
 
     links: {
@@ -289,10 +309,11 @@ export interface ResolvedThemeInterface {
       hover: string;
     };
   };
-  menu: {
+  sidebar: {
     width: string;
     backgroundColor: string;
     textColor: string;
+    activeTextColor: string;
     groupItems: {
       textTransform: string;
     };
@@ -307,13 +328,14 @@ export interface ResolvedThemeInterface {
   logo: {
     maxHeight: string;
     maxWidth: string;
+    gutter: string;
   };
   rightPanel: {
     backgroundColor: string;
     textColor: string;
     width: string;
   };
-  codeSample: {
+  codeBlock: {
     backgroundColor: string;
   };
 

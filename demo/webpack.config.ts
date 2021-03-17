@@ -1,5 +1,5 @@
 import * as CopyWebpackPlugin from 'copy-webpack-plugin';
-import * as ForkTsCheckerWebpackPlugin from 'fork-ts-checker-webpack-plugin';
+import ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
 import * as HtmlWebpackPlugin from 'html-webpack-plugin';
 import { compact } from 'lodash';
 import { resolve } from 'path';
@@ -7,17 +7,14 @@ import * as webpack from 'webpack';
 
 const VERSION = JSON.stringify(require('../package.json').version);
 const REVISION = JSON.stringify(
-  require('child_process')
-    .execSync('git rev-parse --short HEAD')
-    .toString()
-    .trim(),
+  require('child_process').execSync('git rev-parse --short HEAD').toString().trim(),
 );
 
 function root(filename) {
   return resolve(__dirname + '/' + filename);
 }
 
-const tsLoader = env => ({
+const tsLoader = (env) => ({
   loader: 'ts-loader',
   options: {
     compilerOptions: {
@@ -27,7 +24,7 @@ const tsLoader = env => ({
   },
 });
 
-const babelLoader = mode => ({
+const babelLoader = () => ({
   loader: 'babel-loader',
   options: {
     generatorOpts: {
@@ -38,17 +35,16 @@ const babelLoader = mode => ({
       ['@babel/plugin-syntax-decorators', { legacy: true }],
       '@babel/plugin-syntax-dynamic-import',
       '@babel/plugin-syntax-jsx',
-      mode !== 'production' ? 'react-hot-loader/babel' : undefined,
-      [
-        'babel-plugin-styled-components',
-        {
-          minify: true,
-          displayName: mode !== 'production',
-        },
-      ],
     ]),
   },
 });
+
+const babelHotLoader = {
+  loader: 'babel-loader',
+  options: {
+    plugins: ['react-hot-loader/babel'],
+  },
+};
 
 export default (env: { playground?: boolean; bench?: boolean } = {}, { mode }) => ({
   entry: [
@@ -57,8 +53,8 @@ export default (env: { playground?: boolean; bench?: boolean } = {}, { mode }) =
       env.playground
         ? 'playground/hmr-playground.tsx'
         : env.bench
-          ? '../benchmark/index.tsx'
-          : 'index.tsx',
+        ? '../benchmark/index.tsx'
+        : 'index.tsx',
     ),
   ],
   output: {
@@ -77,6 +73,12 @@ export default (env: { playground?: boolean; bench?: boolean } = {}, { mode }) =
 
   resolve: {
     extensions: ['.ts', '.tsx', '.js', '.json'],
+    alias:
+      mode !== 'production'
+        ? {
+            'react-dom': '@hot-loader/react-dom',
+          }
+        : {},
   },
 
   node: {
@@ -88,6 +90,9 @@ export default (env: { playground?: boolean; bench?: boolean } = {}, { mode }) =
   externals: {
     esprima: 'esprima',
     'node-fetch': 'null',
+    'node-fetch-h2': 'null',
+    yaml: 'null',
+    'safe-json-stringify': 'null',
   },
 
   module: {
@@ -96,7 +101,11 @@ export default (env: { playground?: boolean; bench?: boolean } = {}, { mode }) =
       { test: [/\.eot$/, /\.gif$/, /\.woff$/, /\.svg$/, /\.ttf$/], use: 'null-loader' },
       {
         test: /\.tsx?$/,
-        use: [tsLoader(env), babelLoader(mode)],
+        use: compact([
+          mode !== 'production' ? babelHotLoader : undefined,
+          tsLoader(env),
+          babelLoader(),
+        ]),
         exclude: [/node_modules/],
       },
       {
@@ -105,7 +114,6 @@ export default (env: { playground?: boolean; bench?: boolean } = {}, { mode }) =
           loader: 'css-loader',
           options: {
             sourceMap: true,
-            minimize: true,
           },
         },
       },
@@ -136,14 +144,16 @@ export default (env: { playground?: boolean; bench?: boolean } = {}, { mode }) =
       template: env.playground
         ? 'demo/playground/index.html'
         : env.bench
-          ? 'benchmark/index.html'
-          : 'demo/index.html',
+        ? 'benchmark/index.html'
+        : 'demo/index.html',
     }),
     new ForkTsCheckerWebpackPlugin(),
     ignore(/js-yaml\/dumper\.js$/),
     ignore(/json-schema-ref-parser\/lib\/dereference\.js/),
     ignore(/^\.\/SearchWorker\.worker$/),
-    new CopyWebpackPlugin(['demo/openapi.yaml']),
+    new CopyWebpackPlugin({
+      patterns: ['demo/openapi.yaml'],
+    }),
   ],
 });
 
