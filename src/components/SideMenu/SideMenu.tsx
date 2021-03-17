@@ -21,7 +21,7 @@ export class SideMenu extends React.Component<{ menu: MenuStore; className?: str
           wheelPropagation: false,
         }}
       >
-        <MenuItems items={store.items} onActivate={this.activate} onDeactivate={this.deactivate} root={true}/>
+        <MenuItems items={store.items} onActivate={this.activate} root={true} />
         <RedocAttribution>
           <a target="_blank" href="https://github.com/Rebilly/ReDoc">
             Documentation Powered by ReDoc
@@ -38,10 +38,6 @@ export class SideMenu extends React.Component<{ menu: MenuStore; className?: str
         this._updateScroll();
       }
     });
-  };
-
-  deactivate = (item: IMenuItem) => {
-    this.props.menu.deactivate(item);
   };
 
   private saveScrollUpdate = upd => {

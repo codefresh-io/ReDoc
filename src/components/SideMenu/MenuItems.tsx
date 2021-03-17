@@ -10,7 +10,6 @@ export interface MenuItemsProps {
   items: IMenuItem[];
   expanded?: boolean;
   onActivate?: (item: IMenuItem) => void;
-  onDeactivate?: (item: IMenuItem) => void;
   style?: React.CSSProperties;
   root?: boolean;
 
@@ -30,7 +29,7 @@ export class MenuItems extends React.Component<MenuItemsProps> {
         {...(root ? { role: 'navigation' } : {})}
       >
         {items.map((item, idx) => (
-          <MenuItem key={idx} item={item} onActivate={this.props.onActivate} onDeactivate={this.props.onDeactivate} />
+          <MenuItem key={idx} item={item} onActivate={this.props.onActivate} />
         ))}
       </MenuItemUl>
     );

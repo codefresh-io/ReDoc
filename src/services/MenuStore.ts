@@ -187,10 +187,6 @@ export class MenuStore {
     rewriteHistory: boolean = false,
   ) {
     if ((this.activeItem && this.activeItem.id) === (item && item.id)) {
-      if (item && !item.expanded) {
-        item.activate();
-        item.expand();
-      }
       return;
     }
     this.deactivate(this.activeItem);
